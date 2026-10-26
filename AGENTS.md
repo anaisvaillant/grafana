@@ -151,17 +151,20 @@ Build a specific plugin: `yarn workspace @grafana-plugins/<name> dev`
 
 ### Prerequisites
 
-- **Node.js** — version pinned in `.nvmrc` (check that file for the exact version). Installed via nvm and set as the nvm default. **PATH gotcha:** the infra injects `/exec-daemon/node` ahead of nvm, so the plain non-login shell may resolve `node` to an older version — check it satisfies the `engines` range in `package.json` (it does today, so builds/tests work), but it is not the pinned version. Login shells (tmux sessions, `bash -lc '...'`) get the pinned version because `~/.bashrc` prepends the nvm bin. Run `yarn` / `yarn start` / `jest` / webpack via a login shell (tmux or `bash -lc`) to use the pinned Node.
-- **Go** — version pinned in `go.mod` (check that file for the exact version), installed at `/usr/local/go` and symlinked to `/usr/local/bin/go`. The distro `/usr/bin/go` is older; `/usr/local/bin` wins in PATH so `go` resolves correctly. If `go.mod` bumps Go, reinstall a matching toolchain into `/usr/local/go`.
-- **Yarn** via corepack — version pinned by `package.json` `packageManager` (check that field for the exact version). Run `corepack enable` if `yarn` is not found. `.yarnrc.yml` sets `enableScripts: false`, so dependency build/lifecycle scripts are disabled by default.
-- **GCC** required for CGo/SQLite compilation of the backend.
-- Repos in this environment live under `/agent/repos/<repo>` (e.g. `/agent/repos/grafana`); this is a multi-repo workspace, not the single `~/grafana` layout described in `grafana-enterprise/AGENTS.md`.
+- **Node.js** — `package.json` `engines` allows `>=22 <25`. `node` resolves to `/exec-daemon/node` (v22 on this image), including in login shells (`bash -lc`), because `/exec-daemon` is ahead of nvm on `PATH`. That binary satisfies `engines`. `.nvmrc` pins a 24.x release, and nvm lives under `~/.nvm`, but `node` is not that pin. Run `yarn`, `yarn start`, and `jest` with the `node` already on `PATH`.
+- **Yarn** via corepack — version pinned by `package.json` `packageManager`. Run `corepack enable` and `corepack install` if `yarn` is missing. `.yarnrc.yml` sets `enableScripts: false`, so dependency build/lifecycle scripts are disabled by default.
+- **Go** — version pinned in `go.mod`. `go version` reports that toolchain. The distro `/usr/bin/go` may be older; with `GOTOOLCHAIN=auto` the first `go` command downloads the pinned toolchain into the module cache (`~/go/pkg/mod/golang.org/toolchain@...`).
+- **GCC** is installed and is required for CGo/SQLite builds that do not set `CGO_ENABLED=0`. `make run` builds with `CGO_ENABLED=0`.
+- The checkout for this environment is `/workspace`.
 
 ### Running services
 
 - **Backend**: `make run` — builds and starts Grafana backend with hot-reload (air) on `localhost:3000`. Default login: `admin`/`admin`. First build takes ~3 minutes due to debug symbols (`-gcflags all=-N -l`); subsequent hot-reload rebuilds are faster.
-- **Frontend**: `yarn start` — starts webpack dev server that watches for changes. The backend proxies to it. First compile takes ~45s.
+- **Frontend**: `yarn start` — webpack watch, writing assets the backend serves from `public/build/`. First compile takes ~45s (longer while the backend compile is also running).
 - No external databases required — Grafana uses embedded SQLite by default.
+- If tmux sessions `grafana-backend` and `grafana-frontend` already exist and `curl -sf http://127.0.0.1:3000/api/health` succeeds, the dev servers are already up. Do not start a second pair.
+- The first browser login shows **Update your password**. Choose **Skip** to keep `admin`/`admin`.
+- Calls to `grafana.com` (plugin signature keys, the home-page blog widget) can fail when that host is outside the egress allowlist. Login, the API, and dashboards still work.
 
 ### Testing gotchas
 
